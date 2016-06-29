@@ -1,7 +1,8 @@
 {
     "name": "tehac/website",
     "description": "Website",
-    "minimum-stability": "dev",
+    "minimum-stability" : "dev",
+	"prefer-stable" : true,
     "require": {
         "php": "^5.3.3 || ^7.0"
     }
