@@ -1,6 +1,7 @@
 {
     "name": "tehac/website",
     "description": "Website",
+    "minimum-stability": "dev",
     "require": {
         "php": "^5.3.3 || ^7.0"
     }
