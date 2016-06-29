@@ -5,7 +5,7 @@
 
 namespace Website;
 
-class Website
+class Presenter
 {
 	public $bDebug;				// debug - zobraz prázdné hodnoty pro template
 	
