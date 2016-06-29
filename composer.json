@@ -1,26 +1,7 @@
 {
     "name": "tehac/website",
     "description": "Website",
-    "license": "GPL-2.0",
-    "authors": [
-        {
-            "name": "Tomas Haluza",
-            "email": "tomas@haluza.cz"
-        }
-    ],
     "require": {
-        "php": ">=5.5.0"
-    },
-    "repositories": [{
-    "type": "package",
-    "package": {
-        "name": "tehac/website",
-        "version": "0.1.0",
-        "source": {
-                "url": "git@github.com:tehac/website.git",
-            "type": "git",
-        "reference": "0.1.0"
-        }
-        }
-    }]
+        "php": "^5.3.3 || ^7.0"
+    }
 }
