@@ -6,20 +6,9 @@ namespace Composer\Autoload;
 
 class ComposerStaticInitaaa1b6c2f7059c527a398be796caf551
 {
-    public static $prefixesPsr0 = array (
-        'W' => 
-        array (
-            'Website' => 
-            array (
-                0 => __DIR__ . '/../..' . '/src',
-            ),
-        ),
-    );
-
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixesPsr0 = ComposerStaticInitaaa1b6c2f7059c527a398be796caf551::$prefixesPsr0;
 
         }, null, ClassLoader::class);
     }
