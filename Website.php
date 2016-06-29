@@ -3,6 +3,8 @@
 /*-- © Tomáš Haluza, www.haluza.cz   --*/
 /*-- 28.06.2016                      --*/
 
+namespace Website;
+
 class Website
 {
 	public $bDebug;				// debug - zobraz prázdné hodnoty pro template
