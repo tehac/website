@@ -1,0 +1,21 @@
+{
+    "name": "tehac/website",
+    "description": "Website",
+    "type": "library",
+    "license": "GPL-2.0",
+    "authors": [
+        {
+            "name": "Tomas Haluza",
+            "email": "tomas@haluza.cz"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "php": ">=5.5.0"
+    },
+    "autoload": {
+        "psr-0": {
+            "Website": "src/"
+        }
+    }
+}
