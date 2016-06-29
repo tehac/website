@@ -11,19 +11,5 @@
     ],
     "require": {
         "php": ">=5.5.0"
-    },
-    "repositories": [
-        {
-            "type": "package",
-            "package": {
-                "version": "dev-master",
-                "name": "tehac/website",
-                "source": {
-                    "url": "git@github.com:tehac/website.git",
-                    "type": "git",
-                    "reference": "master"
-                }
-            }
-        }
-    ]
+    }
 }
