@@ -1,9 +1,17 @@
 {
     "name": "tehac/website",
     "description": "Website",
-    "minimum-stability" : "dev",
-	"prefer-stable" : true,
     "require": {
         "php": "^5.3.3 || ^7.0"
-    }
+    },
+    "autoload": {
+		"classmap": ["src/"]
+	}, 
+    "minimum-stability" : "dev",
+	"prefer-stable" : true,
+	"extra": {
+		"branch-alias": {
+			"dev-master": "1.0-dev"
+		}
+	} 
 }
