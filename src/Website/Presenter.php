@@ -5,29 +5,31 @@
 
 namespace Website;
 
-use Exception;
-use \Tracy\Debugger as Debugger;
+use \Exception;
+use \Translator;
+use \Latte\Engine as Latte;
 
-class Presenter extends Exception
+
+class Presenter
 {
-	public $bDebug;				// debug - zobraz prázdné hodnoty pro template
+	public $debug;				// debug - zobraz prázdné hodnoty pro template
 	
-	public $iModuleID;			// ID zpracováváného modulu
+	public $moduleID;			// ID zpracováváného modulu
 
-	public $sEncoding;			// compress ?
-	public $sModulePath;		// cesta k modulu
-	public $sTemplatePath;		// cesta k šabloně
-	public $sCachePath;			// cesta ke cache
-	public $sHTML;				// HTML výstup
-	public $sLang;				// id jazyka, výchozí = 'cs'
+	public $encoding;			// compress ?
+	public $modulePath;			// cesta k modulu
+	public $templatePath;		// cesta k šabloně
+	public $cachePath;			// cesta ke cache
+	public $html;				// HTML výstup
+	public $lang;				// id jazyka, výchozí = 'cs'
+	public $locale;				// locale
 
 	public $config;				// konfigurační parametry
-	public $aModuleRights;		// dodatečná práva k modulu
-	public $aModule;			// vykonávaný modul webu
-	public $aVars;				// proměnné pro parsování do šablon
-	public $aScript;			// hodnoty prováděné stránky, modulu
-	public $aHTML;				// HTML výstup v poli
-	public $aLang;				// jazyky pro mutace webu
+	public $moduleRights;		// dodatečná práva k modulu
+	public $module;				// vykonávaný modul webu
+	public $params;				// proměnné pro parsování do šablon
+	public $script;				// hodnoty prováděné stránky, modulu
+	public $htmlArray;			// HTML výstup v poli
 
 	public $latte;				// šablonovací systém
 
@@ -36,34 +38,47 @@ class Presenter extends Exception
 	 */
 	function __construct()
 	{
-		global $config, $latte;
+		global $config;
 
-		$this->bDebug = $_SERVER['REMOTE_ADDR'] == "127.0.0.1" || $_SERVER['SERVER_ADDR'] == "192.168.1.99" ? true : false;
+		$this->debug = false;
+		if (
+			(isset($_SERVER['SERVER_ADDR']) && $_SERVER['SERVER_ADDR'] == "192.168.1.99")
+			|| (isset($argv[1]) && $argv[1] == "local")
+		)
+		{
+			$this->debug = true;
+		}
 
 		$this->config = $config;
-		$this->aModuleRights = array ();
-		$this->aModule = array (
+		$this->moduleRights = array ();
+		$this->module = array (
 			'path' 		=> $config['Script']['path']['module'].'/home.php',	// cesta k zobrazované stránce, výchozí hodnota home page
 			'_GET' 		=> array(),												// předané parametry
 			'textID'	=> NULL													// textový ID stránky
 		);												
-		$this->aScript = array();
-		$this->aHTML = NULL;
-		$this->aVars = array(
+		$this->script = array();
+		$this->htmlArray = NULL;
+		$this->params = array(
 			'TITLE' 	=> $config['Web']['title'],		// titulek stránky - výchozí hodnota
 			'VERZE' 	=> $config['Admin']['version'],	// version
 			'GENERATED'	=> 0,
 		);
 		$this->aLang = array();
 
-		$this->sModulePath = $config['Script']['path']['module'];
-		$this->sTemplatePath = $config['Script']['path']['template'];
-		$this->sCachePath = $config['Script']['path']['cache'];
-		$this->sHTML = '';
-		$this->sLang = 'cs';
+		$this->modulePath = $config['Script']['path']['module'];
+		$this->templatePath = $config['Script']['path']['template'];
+		$this->cachePath = $config['Script']['path']['cache'];
+		$this->html = '';
+		$this->lang = 'cs';
 
 		// Latte
-		$this->latte = $latte;
+		$this->latte = new Latte;
+		$this->latte->setTempDirectory($config['Script']['path']['cache']);
+		$this->latte->addFilter('translate', function ($text) {
+			return Translator::translate($text);
+
+		});
+
 
 		// vymaž moduly uložené v cache
 		if (isset($_GET['nocache']))
@@ -71,13 +86,16 @@ class Presenter extends Exception
 			$this->deleteCache();
 		}
 
-		// čas začátku provádění skriptu
-		$this->aScript['time']['start'] = microtime();
-	}
 
-	function tmp ()
-	{
-		return $this->sLang;
+		// překlady
+		$this->locale = setlocale(LC_ALL, 0);
+		putenv('LANG='.$this->locale);
+		$domain = 'messages';
+		bindtextdomain($domain, $config['Script']['path']['locale']);
+		textdomain($domain);
+
+		// čas začátku provádění skriptu
+		$this->script['time']['start'] = microtime();
 	}
 
 	/*
@@ -93,14 +111,14 @@ class Presenter extends Exception
 		$this->findModule();
 
 		// načti modul
-		if (file_exists($this->aModule['path']))
+		if (file_exists($this->module['path']))
 		{
-			include $this->aModule['path'];
+			include $this->module['path'];
 		}
 		else
 		{
-			log('neexistujici nastaveni modulu: '.$this->aModule['path']);
-			throw new Exception('neexistujici nastaveni modulu: '.$this->aModule['path']);
+			log('neexistujici nastaveni modulu: '. $this->module['path']);
+			throw new Exception('neexistujici nastaveni modulu: '. $this->module['path']);
 		}
 	}
 
@@ -111,20 +129,24 @@ class Presenter extends Exception
 		$this->findEncoding();
 
 		// doba ukončení skriptu - pro testování doby běhu
-		list($iSecStart, $iMsesStart) = explode (" ", $this->aScript['time']['start']);
-		$this->aScript['time']['end'] = microtime ();
-		list($iSecEnd, $iMsecEnd) = explode (" ", $this->aScript['time']['end']);
-		$this->aScript['time']['created'] = ($iSecEnd + $iMsecEnd) - ($iSecStart + $iMsesStart);
+		list($iSecStart, $iMsesStart) = explode (" ", $this->script['time']['start']);
+		$this->script['time']['end'] = microtime ();
+		list($iSecEnd, $iMsecEnd) = explode (" ", $this->script['time']['end']);
+		$this->script['time']['created'] = ($iSecEnd + $iMsecEnd) - ($iSecStart + $iMsesStart);
 
 		// přepiš titulek stránky a ostatní neparsované podle aktuální hodnoty
-		$this->sHTML = !empty($this->aHTML) ? implode ("", $this->aHTML) : '';
-		foreach ($this->aVars as $var => $value)
+		$this->html = !empty($this->htmlArray) ? implode ("", $this->htmlArray) : '';
+		foreach ($this->params as $var => $value)
 		{
-			$this->sHTML = str_replace (
+			$this->html = str_replace (
 				"{ _".$var."_ }",
-				($var == "GENERATED" ? $this->aScript['time']['created'].' seconds' : $value),
-				$this->sHTML
+				($var == "GENERATED" ? $this->script['time']['created'].' seconds' : $value),
+				$this->html
 			);
+		}
+		if ($this->debug)
+		{
+			bdump ('generated: ' . $this->script['time']['created']);
 		}
 
 
@@ -135,29 +157,29 @@ class Presenter extends Exception
 		}
 
 		// pokud existuje komprese prohlížeče a nejsou poslané header, komprimuj výsledné HTML
-		if (!is_null ($this->sEncoding) && !headers_sent () && (ob_get_contents () === false || ob_get_contents () === ""))
+		if (!is_null ($this->encoding) && !headers_sent () && (ob_get_contents () === false || ob_get_contents () === ""))
 		{
-			header ("Content-Encoding: {$this->sEncoding}");
+			header ("Content-Encoding: {$this->encoding}");
 			echo "\x1f\x8b\x08\x00\x00\x00\x00\x00";
-			$sGZIP = gzcompress ($this->sHTML, 7);
+			$sGZIP = gzcompress ($this->html, 7);
 			$sGZIP = substr ($sGZIP, 0, strlen ($sGZIP) - 4);
 
 			echo $sGZIP;
-			echo pack ('V', crc32 ($this->sHTML));
-			echo pack ('V', strlen ($this->sHTML));
+			echo pack ('V', crc32 ($this->html));
+			echo pack ('V', strlen ($this->html));
 		}
 		else
 		{
-			echo $this->sHTML;
+			echo $this->html;
 		}
 
 		// smaž hodnoty, které by neměly být vidět
-		unset($this->aHTML, $this->sHTML, $this->aScript['script'], $this->aScript['cache'], $this->config['SQL']);
+		unset($this->htmlArray, $this->html, $this->script['script'], $this->script['cache'], $this->config['SQL']);
 
 		// ze které stránky se přistupovalo - pro tlačítko zpět na další stránce
-		if (isset($this->aModule['array']) && !empty($this->aModule['array']))
+		if (isset($this->module['array']) && !empty($this->module['array']))
 		{
-			$_SESSION['script']['referer'] = '/' . join ("/", $this->aModule['array']) . '/';
+			$_SESSION['script']['referer'] = '/' . join ("/", $this->module['array']) . '/';
 		}
 		else
 		{
@@ -170,60 +192,60 @@ class Presenter extends Exception
 	{
 		if (isset($_GET['path2module']) && !empty($_GET['path2module']))
 		{
-			$aTmp = preg_split("/\//", $_GET['path2module']);
-			$sExtension = array_pop($aTmp);
+			$tmp = preg_split("/\//", $_GET['path2module']);
+			$extension = array_pop($tmp);
 
 			// najdi ID, pokud existuje přípona .html
-			if (preg_match("/^([\w\W\-]+)\.html$/", $sExtension, $aID))
+			if (preg_match("/^([\w\W\-]+)\.html$/", $extension, $id))
 			{
-				$this->aModule['textID'] = $aID[1];
+				$this->module['textID'] = $id[1];
 
 				// najdi parametry - ID, strana
-				if (preg_match("/^([\w\-]+)\-strana\-(\d+)\.html$/", $sExtension, $aID))
+				if (preg_match("/^([\w\-]+)\-strana\-(\d+)\.html$/", $extension, $id))
 				{
 					// id
-					if (preg_match("/^([\w\-]+)\-(\d+)$/", $aID[1], $aIDsub))
+					if (preg_match("/^([\w\-]+)\-(\d+)$/", $id[1], $idSub))
 					{
-						$this->aModule['textID'] = $aIDsub[1];
-						$this->aModule['_GET']['id'] = intval($aIDsub[2]);
+						$this->module['textID'] = $idSub[1];
+						$this->module['_GET']['id'] = intval($idSub[2]);
 					}
 					else
 					{
-						$this->aModule['textID'] = $aID[1];
+						$this->module['textID'] = $id[1];
 					}
-					$this->aModule['_GET']['strana'] = intval($aID[2]);
+					$this->module['_GET']['strana'] = intval($id[2]);
 				}
 				// najdi parametry - strana
-				else if (preg_match("/^strana\-(\d+)\.html$/", $sExtension, $aID))
+				else if (preg_match("/^strana\-(\d+)\.html$/", $extension, $id))
 				{
 					$this->sTextID = '';
-					$this->aModule['_GET']['strana'] = intval($aID[1]);
+					$this->module['_GET']['strana'] = intval($id[1]);
 				}
 				// najdi parametry - textID, ID
-				else if (preg_match("/^([\w\-]+)\-(\d+)\.html$/", $sExtension, $aID))
+				else if (preg_match("/^([\w\-]+)\-(\d+)\.html$/", $extension, $id))
 				{
-					$this->aModule['textID'] = $aID[1];
-					$this->aModule['_GET']['id'] = intval($aID[2]);
+					$this->module['textID'] = $id[1];
+					$this->module['_GET']['id'] = intval($id[2]);
 				}
 			}
 			// najdi ID, pokud existuje přípona .xml
-			else if (preg_match("/^([\w\W\-]+)\.xml$/", $sExtension, $aID))
+			else if (preg_match("/^([\w\W\-]+)\.xml$/", $extension, $id))
 			{
 				// najdi parametry - textID, ID
-				if (preg_match("/^([\w\-]+)\-(\d+)\.xml$/", $sExtension, $aID))
+				if (preg_match("/^([\w\-]+)\-(\d+)\.xml$/", $extension, $id))
 				{
-					$this->aModule['textID'] = $aID[1];
-					$this->aModule['_GET']['id'] = intval($aID[2]);
+					$this->module['textID'] = $id[1];
+					$this->module['_GET']['id'] = intval($id[2]);
 				}
 			}
 
-			$this->createPath($aTmp);
+			$this->createPath($tmp);
 
 			// nezobraz konkrétní modul, začínající '_', vždy celou stránku!
-			if ($aTmp[count($aTmp)-1][0] != "_")
+			if ($tmp[count($tmp)-1][0] != "_")
 			{
-				$this->aModule['path'] = $this->sModulePath.'/'.join("/", $aTmp).'.php';
-				$this->aModule['array'] = $aTmp;
+				$this->module['path'] = $this->modulePath.'/'.join("/", $tmp).'.php';
+				$this->module['array'] = $tmp;
 			}
 		}
 	}
@@ -235,11 +257,11 @@ class Presenter extends Exception
 		{
 			if (strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'x-gzip') !== false)
 			{
-				$this->sEncoding = 'x-gzip';
+				$this->encoding = 'x-gzip';
 			}
 			else if (strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false)
 			{
-				$this->sEncoding = 'gzip';
+				$this->encoding = 'gzip';
 			}
 		}
 	}
@@ -248,10 +270,10 @@ class Presenter extends Exception
 	// $aThisPath  - cesta k modulu webu
 	function createPath ($path)
 	{
-		$this->aScript['script']['array'] = $path;
-		$this->aScript['script']['path'] = strtolower($this->sModulePath.'/'.join("/", $path).'.php');
-		$this->aScript['script']['time'] = microtime();
-		$this->aScript['template']['path'] = strtolower($this->sTemplatePath.'/'.join("/", $path).'.tpl');
+		$this->script['script']['array'] = $path;
+		$this->script['script']['path'] = strtolower($this->modulePath.'/'.join("/", $path).'.php');
+		$this->script['script']['time'] = microtime();
+		$this->script['template']['path'] = strtolower($this->templatePath.'/'.join("/", $path).'.tpl');
 	}
 	
 	// vytvoření modulu
@@ -262,7 +284,16 @@ class Presenter extends Exception
 		$this->createPath($path);
 
 		// vykonej modul
-		$this->includeModule($this->aScript, $params);
+		$this->includeModule($this->script, $params);
+	}
+
+	// vytvoření modulů
+	function createModules ($params)
+	{
+		foreach ($params as $module)
+		{
+			$this->createModule($module['module'], $module['params']);
+		}
 	}
 	
 	// načti a vykonej PHP, zapiš HTML cache
@@ -271,10 +302,10 @@ class Presenter extends Exception
 	function includeModule ($module, $moduleParams)
 	{
 		// klíč modulu (cesta)
-		$sKey = implode("%", $this->aScript['script']['array']);
+		$sKey = implode("%", $this->script['script']['array']);
 
 		// načti a vykonej PHP modul
-		$this->aScript['time']['script'][$sKey] = microtime();
+		$this->script['time']['script'][$sKey] = microtime();
 		if (file_exists($module['script']['path']))
 		{
 			include $module['script']['path'];
@@ -286,22 +317,22 @@ class Presenter extends Exception
 		}
 		
 		// čas vykonání
-		if (isset($this->aScript['time']['script'][$sKey]))
+		if (isset($this->script['time']['script'][$sKey]))
 		{
-			list($iSecStart, $iMsesStart) = explode(" ", $this->aScript['time']['script'][$sKey]);
+			list($iSecStart, $iMsesStart) = explode(" ", $this->script['time']['script'][$sKey]);
 			list($iSecEnd, $iMsecEnd) = explode(" ", microtime());
-			$this->aScript['time']['script'][$sKey] = ($iSecEnd + $iMsecEnd) - ($iSecStart + $iMsesStart);
+			$this->script['time']['script'][$sKey] = ($iSecEnd + $iMsecEnd) - ($iSecStart + $iMsesStart);
 		}
 
-		$this->aHTML[$sKey] = $this->sHTML;
+		$this->htmlArray[$sKey] = $this->html;
 	}
 
 	// vytvoření modulu - neukládá se do cache, vrátí obsah
 	// $aPath - cesta k modulu
 	function parseModule ($aPath, $aParams = array())
 	{
-		$this->sHTML = '';
-		$module = $this->sModulePath.'/'.implode("/", $aPath).'.php';
+		$this->html = '';
+		$module = $this->modulePath.'/'.implode("/", $aPath).'.php';
 
 		// načti modul
 		if (file_exists($module))
@@ -314,7 +345,7 @@ class Presenter extends Exception
 			throw new Exception('neexistujici modul: '.$module);
 		}
 
-		return $this->sHTML;
+		return $this->html;
 	}
 
 	// vytvoření HTML ze šablony - spouští se pro každný modul
@@ -323,9 +354,9 @@ class Presenter extends Exception
 	{
 		// načti šablonu, výchozí cesta je jako spouštěný modul
 		// pokud není prázdná hodnota, načti šablonu z hodnoty
-		$templatePath = $templatePath == "" ? $this->aScript['template']['path'] : $this->sTemplatePath.$templatePath;
+		$templatePath = $templatePath == "" ? $this->script['template']['path'] : $this->templatePath.$templatePath;
 
-		$this->sHTML = $this->latte->renderToString($templatePath, (array) $params);
+		$this->html = $this->latte->renderToString($templatePath, (array) $params);
 	}
 
 	// vymaž soubory v cache
@@ -376,7 +407,7 @@ class Presenter extends Exception
 				$this->_null_Vars($aVars);
 			}
 			
-			$this->aVars = array_merge($this->aVars, $aVars);
+			$this->params = array_merge($this->params, $aVars);
 		}
 	}
 	
@@ -469,9 +500,9 @@ class Presenter extends Exception
 					$bRights = true;
 				}
 				// má nějaká práva k modulu?
-				else if (is_int($sTypUzivatele) && isset($_SESSION['auth']['prava'][$this->iModuleID]))
+				else if (is_int($sTypUzivatele) && isset($_SESSION['auth']['prava'][$this->moduleID]))
 				{
-					$aPravaModul = explode(",", $_SESSION['auth']['prava'][$this->iModuleID]);
+					$aPravaModul = explode(",", $_SESSION['auth']['prava'][$this->moduleID]);
 					// má tento typ práv k modulu
 					if (in_array($sTypUzivatele, $aPravaModul))
 					{
@@ -483,9 +514,9 @@ class Presenter extends Exception
 		else
 		{
 			// má nějaká práva k modulu?
-			if (isset($_SESSION['auth']['prava'][$this->iModuleID]))
+			if (isset($_SESSION['auth']['prava'][$this->moduleID]))
 			{
-				$aPravaModul = explode(",", $_SESSION['auth']['prava'][$this->iModuleID]);
+				$aPravaModul = explode(",", $_SESSION['auth']['prava'][$this->moduleID]);
 				// má tento typ práv k modulu
 				if (in_array($iTyp, $aPravaModul))
 				{
@@ -497,4 +528,3 @@ class Presenter extends Exception
 		return $bRights;
 	}
 }
-?>
