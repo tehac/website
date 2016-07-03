@@ -8,13 +8,12 @@
 
 namespace Website;
 
+use \Exception;
 
 class Translator
 {
-	static protected $sProperty = 'static';
-
 	public static function translate ($text)
 	{
-		return $text;
+		return _($text);
 	}
 }

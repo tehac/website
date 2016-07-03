@@ -6,32 +6,39 @@
 namespace Website;
 
 use \Exception;
-use \Translator;
 use \Latte\Engine as Latte;
+use \Gettext\Translations as Translations;
+use \Gettext\Generators\Po as Po;
 
 
 class Presenter
 {
-	public $debug;				// debug - zobraz prázdné hodnoty pro template
+	public $debug;					// debug - zobraz prázdné hodnoty pro template
 	
-	public $moduleID;			// ID zpracováváného modulu
+	public $moduleID;				// ID zpracováváného modulu
 
-	public $encoding;			// compress ?
-	public $modulePath;			// cesta k modulu
-	public $templatePath;		// cesta k šabloně
-	public $cachePath;			// cesta ke cache
-	public $html;				// HTML výstup
-	public $lang;				// id jazyka, výchozí = 'cs'
-	public $locale;				// locale
+	public $encoding;				// compress ?
+	public $modulePath;				// cesta k modulu
+	public $templatePath;			// cesta k šabloně
+	public $cachePath;				// cesta ke cache
+	public $html;					// HTML výstup
+	public $lang;					// id jazyka, výchozí = 'cs'
 
-	public $config;				// konfigurační parametry
-	public $moduleRights;		// dodatečná práva k modulu
-	public $module;				// vykonávaný modul webu
-	public $params;				// proměnné pro parsování do šablon
-	public $script;				// hodnoty prováděné stránky, modulu
-	public $htmlArray;			// HTML výstup v poli
+	public $locale;					// locale (cs_CZ.utf8)
+	public $locales;				// locales [cs_CZ.utf8]
+	public $localePo;				// message.po
+	public $localeMo;				// message.mo
+	public $translations;			// překlady
+	public $translationsInserted;	// je nějaký neuložený překlad
 
-	public $latte;				// šablonovací systém
+	public $config;					// konfigurační parametry
+	public $moduleRights;			// dodatečná práva k modulu
+	public $module;					// vykonávaný modul webu
+	public $params;					// proměnné pro parsování do šablon
+	public $script;					// hodnoty prováděné stránky, modulu
+	public $htmlArray;				// HTML výstup v poli
+
+	public $latte;					// šablonovací systém
 
 	/**
 	 * Constructor
@@ -69,16 +76,25 @@ class Presenter
 		$this->templatePath = $config['Script']['path']['template'];
 		$this->cachePath = $config['Script']['path']['cache'];
 		$this->html = '';
+
 		$this->lang = 'cs';
+		$this->locale = setlocale(LC_ALL, 0);
+		$this->locales = $config['Web']['locales'];
+		$this->localePo = $config['Web']['localePo'];
+		$this->localeMo = $config['Web']['localeMo'];
+		$this->translations = Translations::fromPoFile($this->locales[str_replace(".utf8", "", $this->locale)].'/'.$this->localePo);
+		$this->translationsInserted = false;
+
+		// překlady - gettext init
+		$this->gettext();
 
 		// Latte
-		$this->latte = new Latte;
+		$this->latte = new Latte();
 		$this->latte->setTempDirectory($config['Script']['path']['cache']);
-		$this->latte->addFilter('translate', function ($text) {
-			return Translator::translate($text);
-
+		$this->latte->addFilter('translate', function ($text)
+		{
+			return $this->translate($text);
 		});
-
 
 		// vymaž moduly uložené v cache
 		if (isset($_GET['nocache']))
@@ -86,16 +102,32 @@ class Presenter
 			$this->deleteCache();
 		}
 
-
-		// překlady
-		$this->locale = setlocale(LC_ALL, 0);
-		putenv('LANG='.$this->locale);
-		$domain = 'messages';
-		bindtextdomain($domain, $config['Script']['path']['locale']);
-		textdomain($domain);
-
 		// čas začátku provádění skriptu
 		$this->script['time']['start'] = microtime();
+	}
+
+	// nastaverní gettext
+	private function gettext ()
+	{
+		$domain = 'messages';
+
+		putenv('LANG='.$this->locale);
+		bindtextdomain($domain, $this->config['Script']['path']['locale']);
+		textdomain($domain);
+	}
+
+	// přelož výraz ze šablony
+	private function translate ($text)
+	{
+		// je přidáno v .po souboru?
+		if (!$this->translations->find(null, $text))
+		{
+			bdump("Přidávám do překladu: {$text}");
+			$insertedTranslation = $this->translations->insert(null, $text);
+			$this->translationsInserted = true;
+		}
+
+		return _($text);
 	}
 
 	/*
@@ -184,6 +216,20 @@ class Presenter
 		else
 		{
 			$_SESSION['script']['referer'] = '/';
+		}
+
+		// vložili jsme nějaký nový překlad:
+		if ($this->translationsInserted)
+		{
+			$localePath = $this->locales[str_replace(".utf8", "", $this->locale)].'/'.$this->localePo;
+
+			if (!$this->translations->toPoFile($localePath));
+			{
+				log('Nelze uložit překlady: '. $localePath);
+				throw new Exception('Nelze uložit překlady: '. $localePath);
+			}
+			//$contentPo = Po::toString($this->translations);
+			//print_r($contentPo);
 		}
 	}
 
