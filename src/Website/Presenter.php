@@ -73,7 +73,7 @@ class Presenter
 		$this->aLang = array();
 
 		$this->modulePath = $config['Script']['path']['module'];
-		$this->templatePath = $config['Script']['path']['template'];
+		$this->templatePath = $GLOBALS['latte']['templatePath'] = $config['Script']['path']['template'];
 		$this->cachePath = $config['Script']['path']['cache'];
 		$this->html = '';
 
@@ -88,12 +88,14 @@ class Presenter
 		// překlady - gettext init
 		$this->gettext();
 
-		// Latte
+		// Latte + překlad šablony
 		$this->latte = new Latte();
 		$this->latte->setTempDirectory($config['Script']['path']['cache']);
-		$this->latte->addFilter('translate', function ($text)
-		{
+		$this->latte->addFilter('translate', function ($text) {
 			return $this->translate($text);
+		});
+		$this->latte->addFilter('json_encode', function ($text) {
+			return json_encode($text, JSON_UNESCAPED_UNICODE);
 		});
 
 		// vymaž moduly uložené v cache
@@ -111,7 +113,7 @@ class Presenter
 	{
 		$domain = 'messages';
 
-		putenv('LANG='.$this->locale);
+		@putenv('LANG='.$this->locale);
 		bindtextdomain($domain, $this->config['Script']['path']['locale']);
 		textdomain($domain);
 	}
@@ -149,8 +151,8 @@ class Presenter
 		}
 		else
 		{
-			log('neexistujici nastaveni modulu: '. $this->module['path']);
-			throw new Exception('neexistujici nastaveni modulu: '. $this->module['path']);
+			log('neexistujici nastaveni modulu: '. print_r($this->module['path'], true));
+			throw new Exception('neexistujici nastaveni modulu: '. print_r($this->module['path'], true));
 		}
 	}
 
@@ -167,7 +169,7 @@ class Presenter
 		$this->script['time']['created'] = ($iSecEnd + $iMsecEnd) - ($iSecStart + $iMsesStart);
 
 		// přepiš titulek stránky a ostatní neparsované podle aktuální hodnoty
-		$this->html = !empty($this->htmlArray) ? implode ("", $this->htmlArray) : '';
+		$this->html = !empty($this->htmlArray) ? implode ("", $this->htmlArray) : ($this->html != "" ? $this->html : '');
 		foreach ($this->params as $var => $value)
 		{
 			$this->html = str_replace (
@@ -176,11 +178,6 @@ class Presenter
 				$this->html
 			);
 		}
-		if ($this->debug)
-		{
-			bdump ('generated: ' . $this->script['time']['created']);
-		}
-
 
 		// pošli header
 		if (!empty($sHeader) && !headers_sent ())
@@ -226,10 +223,8 @@ class Presenter
 			if (!$this->translations->toPoFile($localePath));
 			{
 				log('Nelze uložit překlady: '. $localePath);
-				throw new Exception('Nelze uložit překlady: '. $localePath);
+				//throw new Exception('Nelze uložit překlady: '. $localePath);
 			}
-			//$contentPo = Po::toString($this->translations);
-			//print_r($contentPo);
 		}
 	}
 
@@ -358,8 +353,8 @@ class Presenter
 		}
 		else
 		{
-			log('neexistujici modul: '. $module['script']['path']);
-			throw new Exception('neexistujici modul: '. $module['script']['path']);
+			log('neexistujici modul: '. print_r($module['script']['path'], true));
+			throw new Exception('neexistujici modul: '. print_r($module['script']['path'], true));
 		}
 		
 		// čas vykonání
@@ -403,6 +398,34 @@ class Presenter
 		$templatePath = $templatePath == "" ? $this->script['template']['path'] : $this->templatePath.$templatePath;
 
 		$this->html = $this->latte->renderToString($templatePath, (array) $params);
+	}
+
+	// vložení JS definicí k dané šabloně
+	function createJavascript (&$javascript)
+	{
+		$module = isset($this->module['array']) && !empty($this->module['array']) ? '/'.implode('/', $this->module['array']).'/' : '/';
+
+		$jsMinified = $this->config['Script']['path']['javascript'].$module.$this->config['Web']['javascript']['fileMinified'];
+		$js = $this->config['Script']['path']['javascript'].$module.$this->config['Web']['javascript']['file'];
+
+		if (file_exists ($jsMinified))
+		{
+			$javascript = "\n\t"
+				. sprintf (
+					$this->config['Web']['javascript']['definiton'],
+					$this->config['Web']['javascript']['path'].$module .$this->config['Web']['javascript']['fileMinified']
+				)
+				. $javascript;
+		}
+		else if (file_exists ($js))
+		{
+			$javascript = "\n\t"
+				. sprintf (
+					$this->config['Web']['javascript']['definiton'],
+					$this->config['Web']['javascript']['path'].$module .$this->config['Web']['javascript']['file']
+				)
+				. $javascript;
+		}
 	}
 
 	// vymaž soubory v cache
